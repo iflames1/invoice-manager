@@ -736,7 +736,7 @@ export function InvoiceForm({
                 </section>
             </div>
 
-            <footer className="flex items-center justify-end gap-2 border-t px-6 py-5 md:px-10">
+            <footer className="flex items-center justify-end gap-2 px-6 py-5 md:px-10">
                 <form.Subscribe
                     selector={(state) => [state.isSubmitting] as const}
                 >
