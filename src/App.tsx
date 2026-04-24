@@ -1,191 +1,269 @@
-import { useState } from "react";
-
+import * as React from "react";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 
 import { Sidebar } from "@/components/sidebar";
 import { InvoiceList } from "@/components/invoice-list";
-import { InvoiceForm } from "@/components/invoice-form";
+import { InvoiceDetail } from "@/components/invoice-detail";
+import {
+    InvoiceForm,
+    type InvoiceFormSaveMode,
+} from "@/components/invoice-form";
+import { DeleteInvoiceDialog } from "@/components/delete-invoice-dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
 import {
     Sheet,
     SheetContent,
-    SheetTitle,
     SheetDescription,
+    SheetTitle,
 } from "@/components/ui/sheet";
-import {
-    DropdownMenu,
-    DropdownMenuCheckboxItem,
-    DropdownMenuContent,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { invoices, type Invoice, type InvoiceStatus } from "@/data/invoices";
+import { useInvoiceStore } from "@/store/invoice-store";
+import { useUIStore } from "@/store/ui-store";
+import type { InvoiceStatus } from "@/data/invoices";
+import type { InvoiceFormValues } from "@/lib/invoice-schema";
 
-const STATUS_OPTIONS: InvoiceStatus[] = ["draft", "pending", "paid"];
+const STATUS_OPTIONS: { value: InvoiceStatus; label: string }[] = [
+    { value: "draft", label: "Draft" },
+    { value: "pending", label: "Pending" },
+    { value: "paid", label: "Paid" },
+];
+
+function resolveStatus(
+    saveMode: InvoiceFormSaveMode,
+    existingStatus?: InvoiceStatus
+): InvoiceStatus {
+    if (saveMode === "draft") {
+        return "draft";
+    }
+    if (existingStatus && existingStatus !== "draft") {
+        return existingStatus;
+    }
+    return "pending";
+}
+
+function formValuesToBasePayload(values: InvoiceFormValues) {
+    return {
+        billFrom: values.billFrom,
+        billTo: values.billTo,
+        issueDate: values.issueDate.toISOString(),
+        paymentTerms: values.paymentTerms,
+        description: values.description ?? "",
+        items: values.items ?? [],
+    };
+}
 
 export function App() {
-    const [selected, setSelected] = useState<Invoice | null>(null);
-    const [isNew, setIsNew] = useState(false);
-    const [statusFilter, setStatusFilter] = useState<InvoiceStatus[]>([]);
+    const invoices = useInvoiceStore((state) => state.invoices);
+    const createInvoice = useInvoiceStore((state) => state.createInvoice);
+    const updateInvoice = useInvoiceStore((state) => state.updateInvoice);
+    const markAsPaid = useInvoiceStore((state) => state.markAsPaid);
 
-    const open = selected !== null || isNew;
-    //const open = true;
+    const selectedInvoiceId = useUIStore((state) => state.selectedInvoiceId);
+    const formMode = useUIStore((state) => state.formMode);
+    const statusFilter = useUIStore((state) => state.statusFilter);
+    const viewInvoice = useUIStore((state) => state.viewInvoice);
+    const goBackToList = useUIStore((state) => state.goBackToList);
+    const openCreate = useUIStore((state) => state.openCreate);
+    const openEdit = useUIStore((state) => state.openEdit);
+    const closeForm = useUIStore((state) => state.closeForm);
+    const promptDelete = useUIStore((state) => state.promptDelete);
+    const toggleStatusFilter = useUIStore((state) => state.toggleStatusFilter);
 
-    const handleOpenChange = (next: boolean) => {
-        if (!next) {
-            setSelected(null);
-            setIsNew(false);
+    const selectedInvoice = React.useMemo(
+        () =>
+            selectedInvoiceId
+                ? (invoices.find(
+                      (invoice) => invoice.id === selectedInvoiceId
+                  ) ?? null)
+                : null,
+        [invoices, selectedInvoiceId]
+    );
+
+    const filteredInvoices = React.useMemo(() => {
+        if (statusFilter.length === 0) return invoices;
+        return invoices.filter((invoice) =>
+            statusFilter.includes(invoice.status)
+        );
+    }, [invoices, statusFilter]);
+
+    const handleFormSubmit = (
+        values: InvoiceFormValues,
+        mode: InvoiceFormSaveMode
+    ) => {
+        const base = formValuesToBasePayload(values);
+
+        if (formMode === "create") {
+            const invoice = createInvoice({
+                ...base,
+                status: resolveStatus(mode) as "draft" | "pending",
+            });
+            closeForm();
+            viewInvoice(invoice.id);
+            return;
+        }
+
+        if (formMode === "edit" && selectedInvoice) {
+            updateInvoice(selectedInvoice.id, {
+                ...base,
+                status: resolveStatus(mode, selectedInvoice.status),
+            });
+            closeForm();
         }
     };
 
-    const toggleStatus = (status: InvoiceStatus) => {
-        setStatusFilter((prev) =>
-            prev.includes(status)
-                ? prev.filter((s) => s !== status)
-                : [...prev, status]
-        );
+    const sheetOpen = formMode !== "closed";
+    const handleSheetOpenChange = (next: boolean) => {
+        if (!next) closeForm();
     };
 
-    const filtered =
-        statusFilter.length === 0
-            ? invoices
-            : invoices.filter((invoice) =>
-                  statusFilter.includes(invoice.status)
-              );
+    const sheetInvoice = formMode === "edit" ? selectedInvoice : null;
 
     return (
-        <div className="flex min-h-svh flex-col bg-12 md:flex-row">
+        <div className="flex min-h-svh flex-col bg-12 lg:flex-row">
             <Sidebar />
 
-            <main className="flex w-full px-6 py-19">
-                <div className="mx-auto flex max-w-[730px] flex-col gap-17">
-                    <header className="flex items-center justify-between gap-10">
-                        <div>
-                            <h1 className="text-4xl font-bold">Invoices</h1>
-                            <p className="mt-1.5 text-sm">
-                                <span className="">There are </span>
-                                {filtered.length}{" "}
-                                <span className="">total</span> invoices
-                            </p>
-                        </div>
-
-                        <div className="flex items-center gap-10">
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button
-                                        variant="ghost"
-                                        className="gap-3.5 font-bold"
-                                    >
-                                        <span className="">
-                                            Filter by status
-                                        </span>
-                                        <ChevronDownIcon className="text-01" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent
-                                    align="end"
-                                    className="w-40"
-                                >
-                                    {STATUS_OPTIONS.map((status) => (
-                                        <DropdownMenuCheckboxItem
-                                            key={status}
-                                            checked={statusFilter.includes(
-                                                status
-                                            )}
-                                            onCheckedChange={() =>
-                                                toggleStatus(status)
-                                            }
-                                            className="capitalize"
-                                        >
-                                            {status}
-                                        </DropdownMenuCheckboxItem>
-                                    ))}
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-
-                            <Button
-                                onClick={() => {
-                                    setIsNew(true);
-                                    setSelected(null);
-                                }}
-                                className="h-12 gap-4 rounded-full bg-01 pr-4 pl-2 font-bold hover:bg-02"
-                            >
-                                <span className="flex size-8 items-center justify-center rounded-full bg-white py-2">
-                                    <PlusIcon
-                                        className="size-3"
-                                        color="var(--01)"
-                                    />
-                                </span>
-                                New Invoice{" "}
-                            </Button>
-                        </div>
-                    </header>
-
-                    <InvoiceList
-                        invoices={filtered}
-                        onSelect={(invoice) => {
-                            setSelected(invoice);
-                            setIsNew(false);
-                        }}
+            <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-8 md:py-14 lg:px-10">
+                {selectedInvoice ? (
+                    <InvoiceDetail
+                        invoice={selectedInvoice}
+                        onBack={goBackToList}
+                        onEdit={() => openEdit(selectedInvoice.id)}
+                        onDelete={() => promptDelete(selectedInvoice.id)}
+                        onMarkAsPaid={() => markAsPaid(selectedInvoice.id)}
                     />
-                </div>
+                ) : (
+                    <>
+                        <header className="flex items-center justify-between gap-4">
+                            <div>
+                                <h1 className="font-heading text-2xl font-bold tracking-tight md:text-3xl">
+                                    Invoices
+                                </h1>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                    <span className="hidden md:inline">
+                                        There are{" "}
+                                    </span>
+                                    {filteredInvoices.length}{" "}
+                                    <span className="hidden md:inline">
+                                        total
+                                    </span>{" "}
+                                    invoices
+                                </p>
+                            </div>
+
+                            <div className="flex items-center gap-3 md:gap-6">
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            className="font-semibold"
+                                        >
+                                            <span className="hidden md:inline">
+                                                Filter by status
+                                            </span>
+                                            <span className="md:hidden">
+                                                Filter
+                                            </span>
+                                            <ChevronDownIcon className="text-01" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent
+                                        align="end"
+                                        className="w-44 p-4"
+                                    >
+                                        <div className="flex flex-col gap-3">
+                                            {STATUS_OPTIONS.map((option) => {
+                                                const id = `filter-${option.value}`;
+                                                const checked =
+                                                    statusFilter.includes(
+                                                        option.value
+                                                    );
+                                                return (
+                                                    <div
+                                                        key={option.value}
+                                                        className="flex items-center gap-3"
+                                                    >
+                                                        <Checkbox
+                                                            id={id}
+                                                            checked={checked}
+                                                            onCheckedChange={() =>
+                                                                toggleStatusFilter(
+                                                                    option.value
+                                                                )
+                                                            }
+                                                        />
+                                                        <Label
+                                                            htmlFor={id}
+                                                            className="cursor-pointer text-sm font-semibold"
+                                                        >
+                                                            {option.label}
+                                                        </Label>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </PopoverContent>
+                                </Popover>
+
+                                <Button
+                                    onClick={openCreate}
+                                    className="h-12 rounded-full bg-01 pr-5 pl-2 font-semibold text-white"
+                                >
+                                    <span className="flex size-8 items-center justify-center rounded-full bg-white text-01">
+                                        <PlusIcon className="size-4" />
+                                    </span>
+                                    New{" "}
+                                    <span className="hidden md:inline">
+                                        Invoice
+                                    </span>
+                                </Button>
+                            </div>
+                        </header>
+
+                        <InvoiceList
+                            invoices={filteredInvoices}
+                            onSelect={(invoice) => viewInvoice(invoice.id)}
+                        />
+                    </>
+                )}
             </main>
 
-            <Sheet open={open} onOpenChange={handleOpenChange}>
+            <Sheet open={sheetOpen} onOpenChange={handleSheetOpenChange}>
                 <SheetContent
                     side="left"
                     showCloseButton={false}
-                    className="flex h-svh min-w-[615px] overflow-hidden rounded-tr-[20px] rounded-br-[20px] border-none bg-12"
+                    overlayClassName="top-16 left-0 right-0 bottom-0 lg:top-0 lg:left-26"
+                    className="flex h-auto flex-col gap-0 rounded-none bg-12 p-0 data-[side=left]:top-16 data-[side=left]:bottom-0 data-[side=left]:h-auto data-[side=left]:w-full data-[side=left]:max-w-none data-[side=left]:sm:max-w-none md:data-[side=left]:max-w-xl lg:data-[side=left]:top-0 lg:data-[side=left]:left-26 lg:data-[side=left]:max-w-2xl lg:data-[side=left]:rounded-r-2xl"
                 >
                     <SheetTitle className="sr-only">
-                        {isNew
+                        {formMode === "create"
                             ? "New Invoice"
-                            : `Edit invoice ${selected?.id ?? ""}`}
+                            : `Edit invoice ${sheetInvoice?.id ?? ""}`}
                     </SheetTitle>
                     <SheetDescription className="sr-only">
-                        {isNew
+                        {formMode === "create"
                             ? "Create a new invoice"
                             : "Edit the details of this invoice"}
                     </SheetDescription>
 
-                    <InvoiceForm invoice={selected} />
-
-                    <footer className="flex items-center justify-end gap-2 bg-12 px-6 py-5 md:px-10">
-                        {isNew ? (
-                            <>
-                                <Button
-                                    variant="secondary"
-                                    onClick={() => handleOpenChange(false)}
-                                    className="h-12 rounded-full px-6 py-4.5"
-                                >
-                                    Discard
-                                </Button>
-                                <Button
-                                    variant="secondary"
-                                    className="h-12 rounded-full bg-[#373b53] px-6 text-white hover:bg-[#0c0e16] dark:bg-[#0c0e16]"
-                                >
-                                    Save as Draft
-                                </Button>
-                                <Button className="h-12 rounded-full bg-[#7c5dfa] px-6 text-white hover:bg-[#9277ff]">
-                                    Save &amp; Send
-                                </Button>
-                            </>
-                        ) : (
-                            <>
-                                <Button
-                                    variant="secondary"
-                                    onClick={() => handleOpenChange(false)}
-                                    className="h-12 rounded-full px-6"
-                                >
-                                    Cancel
-                                </Button>
-                                <Button className="h-12 rounded-full bg-01 px-6 text-white hover:bg-[#9277ff]">
-                                    Save Changes
-                                </Button>
-                            </>
-                        )}
-                    </footer>
+                    {sheetOpen && (
+                        <InvoiceForm
+                            key={sheetInvoice?.id ?? "new"}
+                            mode={formMode === "create" ? "create" : "edit"}
+                            invoice={sheetInvoice}
+                            onSubmit={handleFormSubmit}
+                            onCancel={closeForm}
+                        />
+                    )}
                 </SheetContent>
             </Sheet>
+
+            <DeleteInvoiceDialog />
         </div>
     );
 }

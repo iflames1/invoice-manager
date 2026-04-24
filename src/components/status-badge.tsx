@@ -2,15 +2,15 @@ import type { InvoiceStatus } from "@/data/invoices";
 import { cn } from "@/lib/utils";
 
 const STATUS_STYLES: Record<InvoiceStatus, string> = {
-    paid: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-    pending: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    draft: "bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
+    paid: "bg-[#33D69F]/5 text-[#33D69F] dark:text-[#33D69F]",
+    pending: "bg-[#FF8F00]/5 text-[#FF8F00] dark:text-[##FF8F00]",
+    draft: "bg-05/5 text-05 dark:text-05",
 };
 
 const DOT_STYLES: Record<InvoiceStatus, string> = {
-    paid: "bg-emerald-500",
-    pending: "bg-amber-500",
-    draft: "bg-zinc-500",
+    paid: "bg-[#33D69F]",
+    pending: "bg-[#FF8F00]",
+    draft: "bg-05",
 };
 
 const STATUS_LABELS: Record<InvoiceStatus, string> = {
